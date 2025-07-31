@@ -61,6 +61,23 @@ func NewPaymentConsumer(defaultHost, fallbackHost string, queue amqp.Queue, chan
 	return &PaymentConsumer{defaultHost, fallbackHost, channel, queue}
 }
 
+type addr struct {
+	sync.Mutex
+	addr string
+}
+
+func (a *addr) SetAddr(s string) {
+	a.Lock()
+	defer a.Unlock()
+	a.addr = s
+}
+
+func (a *addr) GetAddr() string {
+	a.Lock()
+	defer a.Unlock()
+	return a.addr
+}
+
 func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.Channel) {
 	log.Println("starting consumer")
 	msgs, err := channel.Consume(
@@ -75,17 +92,17 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 	if err != nil {
 		log.Fatal(err)
 	}
-	var addr string
+	var addr addr
 	go func() {
 		log.Println("start checking services health")
 		for {
-			addr = checkHealth(pc.defaultHost, pc.fallbackHost)
+			addr.SetAddr(checkHealth(pc.defaultHost, pc.fallbackHost))
 			time.Sleep(time.Second * 5)
 		}
 	}()
 
 	for d := range msgs {
-		if err = postPayment(d.Body, addr); err != nil && !errors.Is(err, ErrUnprocessableEntity) {
+		if err = postPayment(d.Body, addr.GetAddr()); err != nil && !errors.Is(err, ErrUnprocessableEntity) {
 			d.Nack(false, true)
 			continue
 		}

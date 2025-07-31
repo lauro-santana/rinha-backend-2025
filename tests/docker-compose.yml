@@ -1,0 +1,15 @@
+services:
+
+  rabbitmq:
+    image: rabbitmq:3-alpine
+    container_name: rabbitmq_test
+    ports:
+      - "5673:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest

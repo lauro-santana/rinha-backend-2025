@@ -2,6 +2,8 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 
@@ -21,6 +23,10 @@ func (h *Handler) Post(w http.ResponseWriter, r *http.Request) {
 	var payment model.Payment
 	err := json.NewDecoder(r.Body).Decode(&payment)
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Println("error on decode payment", err)
 		return
