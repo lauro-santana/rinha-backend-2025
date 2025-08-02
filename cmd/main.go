@@ -45,15 +45,13 @@ func main() {
 		panic(err)
 	}
 
-	db, err := database.NewDatabase()
+	db, err := database.NewDatabase(os.Getenv("POSTGRES_HOST"), os.Getenv("POSTGRES_PORT"), os.Getenv("MIGRATE"))
 	if err != nil {
 		panic(err)
 	}
 
 	paymentConsumer := service.NewPaymentConsumer(os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK"), q, ch, db)
 	go paymentConsumer.StartPaymentConsumer(q, ch)
-
-	addr := os.Getenv("HOST") + ":" + os.Getenv("PORT")
 
 	handlerPayment := handler.NewPayment(service.NewPayment(queueName, ch, db))
 
@@ -62,7 +60,7 @@ func main() {
 	server.HandleFunc("POST /payments", handlerPayment.Post)
 	server.HandleFunc("GET /payments-summary", handlerPayment.Get)
 
-	if err = http.ListenAndServe(addr, server); err != nil {
+	if err = http.ListenAndServe(":"+os.Getenv("SERVER_PORT"), server); err != nil {
 		panic(err)
 	}
 }

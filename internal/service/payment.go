@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	None = iota
+	None int8 = iota
 	Default
 	Fallback
 )
@@ -107,16 +107,16 @@ func NewPaymentConsumer(defaultHost, fallbackHost string, queue amqp.Queue, chan
 
 type addr struct {
 	sync.Mutex
-	flag int
+	flag int8
 }
 
-func (a *addr) SetAddr(f int) {
+func (a *addr) SetAddr(f int8) {
 	a.Lock()
 	defer a.Unlock()
 	a.flag = f
 }
 
-func (a *addr) GetAddr() int {
+func (a *addr) GetAddr() int8 {
 	a.Lock()
 	defer a.Unlock()
 	return a.flag
@@ -142,7 +142,7 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 			time.Sleep(time.Second * 5)
 		}
 	}()
-	var flag int
+	var flag int8
 	defaultPayment, fallbackPayment := pc.defaultHost+"/payments", pc.fallbackHost+"/payments"
 	for d := range msgs {
 		flag = addr.GetAddr()
@@ -172,7 +172,7 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 			d.Nack(false, true)
 			continue
 		}
-		payment.OnFallback = flag == Default
+		payment.OnFallback = flag == Fallback
 		err = goe.Insert(pc.db.Payment).One(&payment)
 		if err != nil {
 			log.Println("error on insert payment", err)
@@ -184,7 +184,7 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 	}
 }
 
-func checkHealth(defaultHost, fallbackHost string) int {
+func checkHealth(defaultHost, fallbackHost string) int8 {
 	var wg sync.WaitGroup
 	var defaultHealth *model.ServiceHealth
 	var fallbackHealth *model.ServiceHealth
@@ -241,7 +241,6 @@ func postPayment(paymentBytes []byte, addr string) error {
 }
 
 func getServiceHealth(addr string) (*model.ServiceHealth, error) {
-	log.Println("request service health to", addr)
 	req, err := http.NewRequest(http.MethodGet, addr, nil)
 	if err != nil {
 		log.Printf("error %v on new get request to %v\n", err, addr)

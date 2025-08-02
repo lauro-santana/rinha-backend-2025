@@ -64,7 +64,7 @@ func TestPayment(t *testing.T) {
 		panic(err)
 	}
 
-	db, err := database.NewDatabase()
+	db, err := database.NewDatabase("localhost", "5433", "1")
 	if err != nil {
 		panic(err)
 	}
