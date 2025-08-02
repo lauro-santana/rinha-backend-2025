@@ -7,8 +7,10 @@ import (
 )
 
 type Payment struct {
-	CorrelationId string          `json:"correlationId"`
-	Amount        decimal.Decimal `json:"amount"`
+	CorrelationId string          `json:"correlationId" goe:"varchar(36);pk"`
+	Amount        decimal.Decimal `json:"amount" goe:"type:decimal(10,2)"`
+	RequestedAt   time.Time       `json:"requestedAt"`
+	OnFallback    bool            `json:"-"`
 }
 
 type Summary struct {
@@ -24,9 +26,4 @@ type PaymentSummary struct {
 type ServiceHealth struct {
 	Failing         bool `json:"failing"`
 	MinResponseTime uint `json:"minResponseTime"`
-}
-
-type PaymentPost struct {
-	Payment
-	RequestedAt time.Time `json:"requestedAt"`
 }

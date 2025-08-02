@@ -1,12 +1,12 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/lauro-santana/rinha-backend-2025/internal/handler"
+	"github.com/lauro-santana/rinha-backend-2025/internal/repository/database"
 	"github.com/lauro-santana/rinha-backend-2025/internal/service"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -16,13 +16,11 @@ func main() {
 	var conn *amqp.Connection
 	var err error
 
-	for i := range 10 {
+	for range 10 {
 		conn, err = amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
 		if err == nil {
-			log.Println("Connected to RabbitMQ")
 			break
 		}
-		log.Printf("RabbitMQ not ready yet... retrying (%d/10)\n", i+1)
 		time.Sleep(3 * time.Second)
 	}
 
@@ -47,18 +45,24 @@ func main() {
 		panic(err)
 	}
 
-	paymentConsumer := service.NewPaymentConsumer(os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK"), q, ch)
+	db, err := database.NewDatabase()
+	if err != nil {
+		panic(err)
+	}
+
+	paymentConsumer := service.NewPaymentConsumer(os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK"), q, ch, db)
 	go paymentConsumer.StartPaymentConsumer(q, ch)
 
 	addr := os.Getenv("HOST") + ":" + os.Getenv("PORT")
 
-	handlerPayment := handler.NewPayment(service.NewPayment(queueName, ch))
+	handlerPayment := handler.NewPayment(service.NewPayment(queueName, ch, db))
 
-	http.HandleFunc("POST /payments", handlerPayment.Post)
+	server := http.NewServeMux()
 
-	log.Println("backend running on", addr)
+	server.HandleFunc("POST /payments", handlerPayment.Post)
+	server.HandleFunc("GET /payments-summary", handlerPayment.Get)
 
-	if err = http.ListenAndServe(addr, nil); err != nil {
+	if err = http.ListenAndServe(addr, server); err != nil {
 		panic(err)
 	}
 }
