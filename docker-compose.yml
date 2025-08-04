@@ -17,10 +17,7 @@ services:
           memory: "20MB"
 
   app1: &app1
-    #image: . 
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: laurosantana/backend-rinha-2025:latest
     environment:
       - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
       - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
