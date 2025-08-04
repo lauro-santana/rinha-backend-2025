@@ -47,7 +47,6 @@ func NewPayment(queue string, channel *amqp.Channel, db *database.Database) IPay
 }
 
 func (s *payment) Post(payment model.Payment) error {
-	payment.RequestedAt = time.Now()
 	jsonBytes, err := json.Marshal(payment)
 	if err != nil {
 		log.Println("error on json marshal payment", err)
@@ -143,18 +142,19 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 		}
 	}()
 	var flag int8
+	var payment model.Payment
 	defaultPayment, fallbackPayment := pc.defaultHost+"/payments", pc.fallbackHost+"/payments"
 	for d := range msgs {
 		flag = addr.GetAddr()
 		switch flag {
 		case Default:
-			err = postPayment(d.Body, defaultPayment)
+			err = postPayment(d.Body, defaultPayment, &payment)
 			if errors.Is(err, ErrPaymentServer) {
-				err = postPayment(d.Body, fallbackPayment)
+				err = postPayment(d.Body, fallbackPayment, &payment)
 				addr.SetAddr(Fallback)
 			}
 		case Fallback:
-			err = postPayment(d.Body, fallbackPayment)
+			err = postPayment(d.Body, fallbackPayment, &payment)
 		default:
 			d.Nack(false, true)
 			continue
@@ -169,13 +169,6 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 			continue
 		}
 
-		var payment model.Payment
-		err = json.Unmarshal(d.Body, &payment)
-		if err != nil {
-			log.Println("error on unmarshal payment", err)
-			d.Nack(false, true)
-			continue
-		}
 		payment.OnFallback = flag == Fallback
 		err = goe.Insert(pc.db.Payment).One(&payment)
 		if err != nil {
@@ -227,7 +220,18 @@ func checkHealth(defaultHost, fallbackHost string) int8 {
 var ErrUnprocessableEntity error = fmt.Errorf("unprocessable entity")
 var ErrPaymentServer error = fmt.Errorf("error on payment server")
 
-func postPayment(paymentBytes []byte, addr string) error {
+func postPayment(paymentBytes []byte, addr string, p *model.Payment) error {
+	err := json.Unmarshal(paymentBytes, p)
+	if err != nil {
+		log.Println("error on unmarshal payment", err)
+		return err
+	}
+	p.RequestedAt = time.Now()
+	paymentBytes, err = json.Marshal(p)
+	if err != nil {
+		log.Println("error on marshal payment", err)
+		return err
+	}
 	req, err := http.NewRequest(http.MethodPost, addr, bytes.NewBuffer(paymentBytes))
 	if err != nil {
 		log.Printf("error %v on new post request to %v\n", err, addr)
