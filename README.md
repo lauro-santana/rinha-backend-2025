@@ -1,17 +1,31 @@
-### Setup for development
+### Ferramentas
 
-#### Build docker image
-```cmd
-docker build -t lauro-santana/rinha-backend-2025 .
-```
+- GO
+- GOE ORM
+- RabbitMQ
+- PostgreSQL
+- Nginx
 
-#### Run docker image
-```cmd
-docker run -p 9999:9999 -e PORT=9999 -e HOST=0.0.0.0 lauro-santana/rinha-backend-2025
-```
+### Setup e teste manual
 
-### Setup compose
+- Na pasta raiz
 
-```cmd
-docker compose up --build
-```
+    ```cmd
+    docker compose up --build
+    ```
+
+### Testes automatizados
+
+- Na pasta tests, preparar o ambiente
+
+    ```cmd
+    docker compose up -d
+    ```
+
+- Subi os serviços da rinha
+
+- Rodar os testes do Go
+
+    ```cmd
+    PAYMENT_PROCESSOR_URL_DEFAULT=http://localhost:8001 PAYMENT_PROCESSOR_URL_FALLBACK=http://localhost:8002 go test . -v -race -count=1
+    ```
