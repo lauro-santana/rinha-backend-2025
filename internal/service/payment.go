@@ -149,6 +149,10 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 		switch flag {
 		case Default:
 			err = postPayment(d.Body, defaultPayment)
+			if errors.Is(err, ErrPaymentServer) {
+				err = postPayment(d.Body, fallbackPayment)
+				addr.SetAddr(Fallback)
+			}
 		case Fallback:
 			err = postPayment(d.Body, fallbackPayment)
 		default:
@@ -201,22 +205,27 @@ func checkHealth(defaultHost, fallbackHost string) int8 {
 	wg.Wait()
 
 	if defaultHealth == nil && fallbackHealth == nil {
+		log.Println("using none, default:", defaultHealth, "fallback:", fallbackHealth)
 		return None
 	}
 	if defaultHealth.Failing {
 		if fallbackHealth.Failing {
+			log.Println("using none, default:", defaultHealth, "fallback:", fallbackHealth)
 			return None
 		}
+		log.Println("using fallback, default is failing", defaultHealth)
 		return Fallback
 	}
 	// TODO: add throughput 100ms as a env
 	if defaultHealth.MinResponseTime > 100 {
+		log.Println("using fallback throughput", defaultHealth)
 		return Fallback
 	}
 	return Default
 }
 
 var ErrUnprocessableEntity error = fmt.Errorf("unprocessable entity")
+var ErrPaymentServer error = fmt.Errorf("error on payment server")
 
 func postPayment(paymentBytes []byte, addr string) error {
 	req, err := http.NewRequest(http.MethodPost, addr, bytes.NewBuffer(paymentBytes))
@@ -236,6 +245,7 @@ func postPayment(paymentBytes []byte, addr string) error {
 	}
 	if res.StatusCode != 200 {
 		log.Printf("status code %v on %v\n", res.StatusCode, addr)
+		return ErrPaymentServer
 	}
 	return nil
 }

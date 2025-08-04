@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -16,7 +17,7 @@ func main() {
 	var conn *amqp.Connection
 	var err error
 
-	for range 10 {
+	for range 50 {
 		conn, err = amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
 		if err == nil {
 			break
@@ -59,7 +60,7 @@ func main() {
 
 	server.HandleFunc("POST /payments", handlerPayment.Post)
 	server.HandleFunc("GET /payments-summary", handlerPayment.Get)
-
+	log.Println("running app")
 	if err = http.ListenAndServe(":"+os.Getenv("SERVER_PORT"), server); err != nil {
 		panic(err)
 	}

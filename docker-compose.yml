@@ -13,8 +13,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.15"
-          memory: "15MB"
+          cpus: "0.2"
+          memory: "20MB"
 
   app1: &app1
     #image: . 
@@ -34,6 +34,11 @@ services:
     depends_on:
       - rabbitmq
       - postgres
+    deploy:
+      resources:
+        limits:
+          cpus: "0.4"
+          memory: "50MB"
 
   app2:
     <<: *app1
@@ -43,6 +48,11 @@ services:
       - SERVER_PORT=9091
       - POSTGRES_PORT=5432
       - POSTGRES_HOST=postgres
+    deploy:
+      resources:
+        limits:
+          cpus: "0.4"
+          memory: "50MB"
 
   rabbitmq:
     image: rabbitmq:3-alpine
@@ -56,9 +66,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    command: >
+     sh -c "rabbitmq-plugins disable --offline rabbitmq_prometheus && rabbitmq-server"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "160MB"
 
   postgres:
     container_name: postgres
@@ -72,6 +89,11 @@ services:
       - "5432:5432"
     networks:
       - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "70MB"
 
 networks:
   backend:
