@@ -1,60 +1,56 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
-	"time"
+	"strconv"
 
+	"github.com/golang-queue/queue"
+	"github.com/golang-queue/queue/core"
 	"github.com/lauro-santana/rinha-backend-2025/internal/handler"
 	"github.com/lauro-santana/rinha-backend-2025/internal/repository/database"
 	"github.com/lauro-santana/rinha-backend-2025/internal/service"
-	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/lauro-santana/rinha-backend-2025/pkg/model"
 )
 
 func main() {
-	queueName := "job_queue"
-	var conn *amqp.Connection
-	var err error
-
-	for range 50 {
-		conn, err = amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
-		if err == nil {
-			break
-		}
-		time.Sleep(3 * time.Second)
-	}
-
-	if err != nil {
-		panic(err)
-	}
-	ch, err := conn.Channel()
-	if err != nil {
-		panic(err)
-	}
-	defer ch.Close()
-
-	q, err := ch.QueueDeclare(
-		queueName, // name
-		true,      // durable
-		false,     // delete when unused
-		false,     // exclusive
-		false,     // no-wait
-		nil,       // arguments
-	)
-	if err != nil {
-		panic(err)
-	}
-
 	db, err := database.NewDatabase(os.Getenv("POSTGRES_HOST"), os.Getenv("POSTGRES_PORT"), os.Getenv("MIGRATE"))
 	if err != nil {
 		panic(err)
 	}
 
-	paymentConsumer := service.NewPaymentConsumer(os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK"), q, ch, db)
-	go paymentConsumer.StartPaymentConsumer(q, ch)
+	pool_size, err := strconv.Atoi(os.Getenv("POOL_SIZE"))
+	if err != nil {
+		panic(err)
+	}
+	channel_buffer, err := strconv.Atoi(os.Getenv("CHANNEL_BUFFER"))
+	if err != nil {
+		panic(err)
+	}
 
-	handlerPayment := handler.NewPayment(service.NewPayment(queueName, ch, db))
+	channel := make(chan model.Payment, channel_buffer)
+	pool := queue.NewPool(int64(pool_size), queue.WithFn(func(ctx context.Context, m core.TaskMessage) error {
+		var v model.Payment
+		if err := json.Unmarshal(m.Payload(), &v); err != nil {
+			return err
+		}
+
+		channel <- v
+		return nil
+	}))
+
+	channel_consumer, err := strconv.Atoi(os.Getenv("CHANNEL_CONSUMER"))
+	if err != nil {
+		panic(err)
+	}
+
+	paymentConsumer := service.NewPaymentConsumer(os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK"), db, pool, channel)
+	go paymentConsumer.StartPaymentConsumer(channel_consumer)
+
+	handlerPayment := handler.NewPayment(service.NewPayment(db, pool))
 
 	server := http.NewServeMux()
 

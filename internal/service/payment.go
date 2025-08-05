@@ -12,9 +12,9 @@ import (
 
 	"github.com/go-goe/goe"
 	"github.com/go-goe/goe/query/where"
+	"github.com/golang-queue/queue"
 	"github.com/lauro-santana/rinha-backend-2025/internal/repository/database"
 	"github.com/lauro-santana/rinha-backend-2025/pkg/model"
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const (
@@ -37,35 +37,21 @@ type IPayment interface {
 }
 
 type payment struct {
-	serviceQueue string
-	channel      *amqp.Channel
-	db           *database.Database
+	db   *database.Database
+	pool *queue.Queue
 }
 
-func NewPayment(queue string, channel *amqp.Channel, db *database.Database) IPayment {
-	return &payment{queue, channel, db}
+func NewPayment(db *database.Database, pool *queue.Queue) IPayment {
+	return &payment{db, pool}
 }
 
 func (s *payment) Post(payment model.Payment) error {
-	jsonBytes, err := json.Marshal(payment)
-	if err != nil {
-		log.Println("error on json marshal payment", err)
-		return err
-	}
-	err = s.channel.Publish(
-		"",             // exchange
-		s.serviceQueue, // routing key
-		false,          // mandatory
-		false,          // immediate
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        []byte(jsonBytes),
-		},
-	)
+	err := s.pool.Queue(payment)
 	if err != nil {
 		log.Println("error on publish payment", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -95,13 +81,13 @@ func (s *payment) Get(from, to time.Time) (*model.PaymentSummary, error) {
 type PaymentConsumer struct {
 	defaultHost  string
 	fallbackHost string
-	channel      *amqp.Channel
-	queue        amqp.Queue
 	db           *database.Database
+	pool         *queue.Queue
+	channel      <-chan model.Payment
 }
 
-func NewPaymentConsumer(defaultHost, fallbackHost string, queue amqp.Queue, channel *amqp.Channel, db *database.Database) *PaymentConsumer {
-	return &PaymentConsumer{defaultHost, fallbackHost, channel, queue, db}
+func NewPaymentConsumer(defaultHost, fallbackHost string, db *database.Database, pool *queue.Queue, channel <-chan model.Payment) *PaymentConsumer {
+	return &PaymentConsumer{defaultHost, fallbackHost, db, pool, channel}
 }
 
 type addr struct {
@@ -121,19 +107,7 @@ func (a *addr) GetAddr() int8 {
 	return a.flag
 }
 
-func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.Channel) {
-	msgs, err := channel.Consume(
-		queue.Name, // queue
-		"",         // consumer
-		false,      // auto-ack
-		false,      // exclusive
-		false,      // no-local
-		false,      // no-wait
-		nil,        // args
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+func (pc *PaymentConsumer) StartPaymentConsumer(channel_consumer int) {
 	var addr addr
 	go func() {
 		for {
@@ -141,31 +115,42 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 			time.Sleep(time.Second * 5)
 		}
 	}()
-	var flag int8
-	var payment model.Payment
 	defaultPayment, fallbackPayment := pc.defaultHost+"/payments", pc.fallbackHost+"/payments"
-	for d := range msgs {
+	var wg sync.WaitGroup
+	for range channel_consumer {
+		wg.Add(1)
+		go func() {
+			pc.startWorker(defaultPayment, fallbackPayment, &addr, &wg)
+		}()
+	}
+	wg.Wait()
+}
+
+func (pc *PaymentConsumer) startWorker(defaultPayment, fallbackPayment string, addr *addr, wg *sync.WaitGroup) {
+	var err error
+	var flag int8
+
+	for payment := range pc.channel {
 		flag = addr.GetAddr()
 		switch flag {
 		case Default:
-			err = postPayment(d.Body, defaultPayment, &payment)
+			err = postPayment(defaultPayment, &payment)
 			if errors.Is(err, ErrPaymentServer) {
-				err = postPayment(d.Body, fallbackPayment, &payment)
+				err = postPayment(fallbackPayment, &payment)
 				addr.SetAddr(Fallback)
 			}
 		case Fallback:
-			err = postPayment(d.Body, fallbackPayment, &payment)
+			err = postPayment(fallbackPayment, &payment)
 		default:
-			d.Nack(false, true)
+			pc.pool.Queue(payment)
 			continue
 		}
 
 		if err != nil {
 			if errors.Is(err, ErrUnprocessableEntity) {
-				d.Ack(false)
 				continue
 			}
-			d.Nack(false, true)
+			pc.pool.Queue(payment)
 			continue
 		}
 
@@ -173,12 +158,11 @@ func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.
 		err = goe.Insert(pc.db.Payment).One(&payment)
 		if err != nil {
 			log.Println("error on insert payment", err)
-			d.Nack(false, true)
+			pc.pool.Queue(payment)
 			continue
 		}
-
-		d.Ack(false)
 	}
+	wg.Done()
 }
 
 func checkHealth(defaultHost, fallbackHost string) int8 {
@@ -220,14 +204,9 @@ func checkHealth(defaultHost, fallbackHost string) int8 {
 var ErrUnprocessableEntity error = fmt.Errorf("unprocessable entity")
 var ErrPaymentServer error = fmt.Errorf("error on payment server")
 
-func postPayment(paymentBytes []byte, addr string, p *model.Payment) error {
-	err := json.Unmarshal(paymentBytes, p)
-	if err != nil {
-		log.Println("error on unmarshal payment", err)
-		return err
-	}
+func postPayment(addr string, p *model.Payment) error {
 	p.RequestedAt = time.Now()
-	paymentBytes, err = json.Marshal(p)
+	paymentBytes, err := json.Marshal(p)
 	if err != nil {
 		log.Println("error on marshal payment", err)
 		return err

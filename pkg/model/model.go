@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -11,6 +12,14 @@ type Payment struct {
 	Amount        decimal.Decimal `json:"amount" goe:"type:decimal(10,2)"`
 	RequestedAt   time.Time       `json:"requestedAt"`
 	OnFallback    bool            `json:"-"`
+}
+
+func (p Payment) Bytes() []byte {
+	b, err := json.Marshal(p)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 type Summary struct {

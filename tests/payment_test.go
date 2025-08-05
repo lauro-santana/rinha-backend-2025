@@ -2,9 +2,9 @@ package tests_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,12 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-queue/queue"
+	"github.com/golang-queue/queue/core"
 	"github.com/google/uuid"
 	"github.com/lauro-santana/rinha-backend-2025/internal/handler"
 	"github.com/lauro-santana/rinha-backend-2025/internal/repository/database"
 	"github.com/lauro-santana/rinha-backend-2025/internal/service"
 	"github.com/lauro-santana/rinha-backend-2025/pkg/model"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/shopspring/decimal"
 )
 
@@ -29,50 +30,26 @@ type AdminPaymentSummary struct {
 }
 
 func TestPayment(t *testing.T) {
-	queueName := "job_queue"
-	var conn *amqp.Connection
-	var err error
-
-	for i := range 10 {
-		conn, err = amqp.Dial("amqp://guest:guest@localhost:5673/")
-		if err == nil {
-			log.Println("Connected to RabbitMQ")
-			break
-		}
-		log.Printf("RabbitMQ not ready yet... retrying (%d/10)\n", i+1)
-		time.Sleep(3 * time.Second)
-	}
-
-	if err != nil {
-		panic(err)
-	}
-	ch, err := conn.Channel()
-	if err != nil {
-		panic(err)
-	}
-	//defer ch.Close()
-
-	q, err := ch.QueueDeclare(
-		queueName, // name
-		true,      // durable
-		false,     // delete when unused
-		false,     // exclusive
-		false,     // no-wait
-		nil,       // arguments
-	)
-	if err != nil {
-		panic(err)
-	}
-
 	db, err := database.NewDatabase("localhost", "5433", "1")
 	if err != nil {
 		panic(err)
 	}
 
-	paymentConsumer := service.NewPaymentConsumer(os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK"), q, ch, db)
-	go paymentConsumer.StartPaymentConsumer(q, ch)
+	channel := make(chan model.Payment, 100)
+	pool := queue.NewPool(10, queue.WithFn(func(ctx context.Context, m core.TaskMessage) error {
+		var v model.Payment
+		if err := json.Unmarshal(m.Payload(), &v); err != nil {
+			return err
+		}
 
-	handlerPayment := handler.NewPayment(service.NewPayment(queueName, ch, db))
+		channel <- v
+		return nil
+	}))
+
+	paymentConsumer := service.NewPaymentConsumer(os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK"), db, pool, channel)
+	go paymentConsumer.StartPaymentConsumer()
+
+	handlerPayment := handler.NewPayment(service.NewPayment(db, pool))
 
 	defaultHost, _ := os.Getenv("PAYMENT_PROCESSOR_URL_DEFAULT"), os.Getenv("PAYMENT_PROCESSOR_URL_FALLBACK")
 
@@ -100,9 +77,6 @@ func TestPayment(t *testing.T) {
 					t.Errorf("expected 200 got %v", rec.Code)
 				}
 
-				for q.Messages != 0 {
-					time.Sleep(100 * time.Millisecond)
-				}
 				time.Sleep(1 * time.Second)
 
 				err = validateRequest(handlerPayment, defaultHost, from)
@@ -150,9 +124,6 @@ func TestPayment(t *testing.T) {
 					}()
 				}
 				wg.Wait()
-				for q.Messages != 0 {
-					time.Sleep(100 * time.Millisecond)
-				}
 				time.Sleep(1 * time.Second)
 				err = validateRequest(handlerPayment, defaultHost, from)
 				if err != nil {
