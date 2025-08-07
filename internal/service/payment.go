@@ -121,15 +121,15 @@ func (a *addr) GetAddr() int8 {
 	return a.flag
 }
 
-func (pc *PaymentConsumer) StartPaymentConsumer(queue amqp.Queue, channel *amqp.Channel) {
-	msgs, err := channel.Consume(
-		queue.Name, // queue
-		"",         // consumer
-		false,      // auto-ack
-		false,      // exclusive
-		false,      // no-local
-		false,      // no-wait
-		nil,        // args
+func (pc *PaymentConsumer) StartPaymentConsumer() {
+	msgs, err := pc.channel.Consume(
+		pc.queue.Name, // queue
+		"",            // consumer
+		false,         // auto-ack
+		false,         // exclusive
+		false,         // no-local
+		false,         // no-wait
+		nil,           // args
 	)
 	if err != nil {
 		log.Fatal(err)

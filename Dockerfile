@@ -19,7 +19,4 @@ FROM alpine
 # copy all the content from /app/myapp into root of alpine
 COPY --from=build /app/myapp /
 
-# just to let know
-EXPOSE 9999
-
 ENTRYPOINT [ "/myapp" ]

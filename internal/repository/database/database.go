@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-goe/goe"
 	"github.com/go-goe/postgres"
@@ -15,7 +16,15 @@ type Database struct {
 
 func NewDatabase(host, port, migrate string) (*Database, error) {
 	dns := fmt.Sprintf("user=postgres password=postgres host=%v port=%v database=postgres", host, port)
-	db, err := goe.Open[Database](postgres.Open(dns, postgres.Config{}))
+	var db *Database
+	var err error
+	for range 10 {
+		db, err = goe.Open[Database](postgres.Open(dns, postgres.Config{}))
+		if err == nil {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
 	if err != nil {
 		return nil, err
 	}
