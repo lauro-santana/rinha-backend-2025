@@ -13,70 +13,56 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "0.2"
+          memory: "15MB"
+
+  app1: &app1
+    image: laurosantana/backend-rinha-2025:latest
+    environment:
+      - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
+      - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
+      - SERVER_PORT=9090
+      - POSTGRES_PORT=5432
+      - POSTGRES_HOST=postgres
+      - MIGRATE=1
+      - CONSUMER=0
+    networks:
+      - backend
+    depends_on:
+      - rabbitmq
+      - postgres
+    deploy:
+      resources:
+        limits:
           cpus: "0.1"
           memory: "20MB"
 
-  app1: &app1
-    #image: laurosantana/backend-rinha-2025:latest
-    build:
-      dockerfile: Dockerfile
+  app2: 
+    <<: *app1
     environment:
       - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
       - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
       - SERVER_PORT=9090
       - POSTGRES_PORT=5432
       - POSTGRES_HOST=postgres
-      - MIGRATE=1
+      - MIGRATE=0
       - CONSUMER=0
-    networks:
-      - backend
-      - payment-processor
-    depends_on:
-      - rabbitmq
-      - postgres
-    deploy:
-      resources:
-        limits:
-          cpus: "0.2"
-          memory: "20MB"
-
-  app2: &app1
-    #image: laurosantana/backend-rinha-2025:latest
-    build:
-      dockerfile: Dockerfile
-    environment:
-      - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
-      - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
-      - SERVER_PORT=9090
-      - POSTGRES_PORT=5432
-      - POSTGRES_HOST=postgres
-      - MIGRATE=1
-      - CONSUMER=0
-    networks:
-      - backend
-      - payment-processor
-    depends_on:
-      - rabbitmq
-      - postgres
-    deploy:
-      resources:
-        limits:
-          cpus: "0.2"
-          memory: "20MB"
 
   app3:
     <<: *app1
-    ports: []
     environment:
       - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
       - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
       - POSTGRES_PORT=5432
       - POSTGRES_HOST=postgres
       - CONSUMER=1
+    networks:
+      - backend
+      - payment-processor
     deploy:
       resources:
         limits:
-          cpus: "0.4"
+          cpus: "0.5"
           memory: "40MB"
 
   rabbitmq:
@@ -91,15 +77,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # command: >
-    #  sh -c "rabbitmq-plugins disable --offline rabbitmq_prometheus && rabbitmq-server"
+    command: >
+     sh -c "rabbitmq-plugins disable --offline rabbitmq_prometheus && rabbitmq-server"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     deploy:
       resources:
         limits:
-          cpus: "0.3"
+          cpus: "0.4"
           memory: "200MB"
 
   postgres:
@@ -117,8 +103,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.3"
-          memory: "50MB"
+          cpus: "0.2"
+          memory: "55MB"
 
 networks:
   backend:
